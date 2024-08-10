@@ -7,6 +7,31 @@ class IdGenerator {
   };
 }
 
+class Collector {
+  private content = "";
+
+  constructor() {
+    this.content = "";
+  }
+
+  push = (content: string): void => {
+    this.content += content;
+  }
+}
+
+class Base {
+  protected generator = new IdGenerator();
+  public crossReference: [number, number][] = [];
+
+  constructor() {}
+
+  capture = (renderResult: RenderResult): RenderResult => {
+    const offset = this.crossReference.at(-1)?.[0] ?? 0;
+    this.crossReference.push([offset + renderResult.result.length, 0]);
+    return renderResult;
+  };
+}
+
 const idGenerator = new IdGenerator();
 
 type RenderResult = { result: string; followers: ObjWrapper[] };
@@ -14,15 +39,6 @@ type RenderResult = { result: string; followers: ObjWrapper[] };
 interface Obj {
   render: () => RenderResult;
 }
-
-// offset, generation
-const crossReference: [number, number][] = [];
-
-const capture = (renderResult: RenderResult): RenderResult => {
-  const offset = crossReference.at(-1)?.[0] ?? 0;
-  crossReference.push([offset + renderResult.result.length, 0]);
-  return renderResult;
-};
 
 class ObjWrapper {
   constructor(private readonly id: number, private readonly obj: Obj) {}
@@ -66,7 +82,7 @@ class PDF {
 ${this.header.render()}
 ${catalogObj.render()}
 xref 
-0 ${crossReference.length}
+0 ${catalogObj.crossReference.length}
 ${crossReference
   .map(
     ([offset, generation]) =>
@@ -93,17 +109,19 @@ class Header {
   };
 }
 
-class Catalog {
+class Catalog extends Base implements Obj {
   constructor(
     private readonly pages: Pages,
     private readonly outlines: Outlines
-  ) {}
+  ) {
+    super();
+  }
 
   render = () => {
     const pagesObj = new ObjWrapper(idGenerator.generate(), this.pages);
     const outlinesObj = new ObjWrapper(idGenerator.generate(), this.outlines);
 
-    return capture({
+    return this.capture({
       result: new Dictionary([
         ["/Type", "/Catalog"],
         ["/Pages", pagesObj.renderRef()],
@@ -113,10 +131,11 @@ class Catalog {
   };
 }
 
-class Pages implements Obj {
+class Pages extends Base implements Obj {
   private readonly count: number;
 
   constructor(private readonly kids: Array<Page>) {
+    super()
     this.count = kids.length;
   }
 
@@ -125,7 +144,7 @@ class Pages implements Obj {
       (kid) => new ObjWrapper(idGenerator.generate(), kid)
     );
 
-    return capture({
+    return this.capture({
       result: new Dictionary([
         ["/Type", "/Pages"],
         ["/Count", this.count],
@@ -136,17 +155,19 @@ class Pages implements Obj {
   };
 }
 
-class Page implements Obj {
+class Page extends Base implements Obj {
   constructor(
     private readonly contents: Contents,
     private readonly resources: Resources
-  ) {}
+  ) {
+    super()
+  }
 
   render = () => {
     const contentsObj = new ObjWrapper(idGenerator.generate(), this.contents);
     const resourcesObj = new ObjWrapper(idGenerator.generate(), this.resources);
 
-    return capture({
+    return this.capture({
       result: new Dictionary([
         ["/Type", "/Page"],
         // Parent は出さない
@@ -161,19 +182,23 @@ class Page implements Obj {
   };
 }
 
-class Outlines implements Obj {
-  constructor(private readonly count: number) {}
+class Outlines extends Base implements Obj {
+  constructor(private readonly count: number) {
+    super()
+  }
 
   render = () => {
-    return capture({ result: new Dictionary([]).render(), followers: [] });
+    return this.capture({ result: new Dictionary([]).render(), followers: [] });
   };
 }
 
-class Contents implements Obj {
-  constructor(private readonly stream: string) {}
+class Contents extends Base implements Obj {
+  constructor(private readonly stream: string) {
+    super()
+  }
 
   render = () => {
-    return capture({
+    return this.capture({
       result: `
 << /Length ${this.stream.length} >>
 stream
@@ -185,8 +210,10 @@ endstream
   };
 }
 
-class Resources implements Obj {
-  constructor(private readonly font: Font[]) {}
+class Resources extends Base implements Obj {
+  constructor(private readonly font: Font[]) {
+    super()
+  }
 
   render = () => {
     const fontObjs = this.font.map((font) => {
@@ -194,7 +221,7 @@ class Resources implements Obj {
       return new ObjWrapper(id, font);
     });
 
-    return capture({
+    return this.capture({
       result: new Dictionary([
         ["/Font", `[${fontObjs.map((font) => font.renderRef()).join(" ")}]`],
       ]).render(),
@@ -203,16 +230,18 @@ class Resources implements Obj {
   };
 }
 
-class Font {
+class Font extends Base implements Obj {
   constructor(
     private readonly subtype: string,
     private readonly name: string,
     private readonly baseFont: string,
     private readonly encoding: string
-  ) {}
+  ) {
+    super()
+  }
 
   render = () => {
-    return capture({
+    return this.capture({
       result: new Dictionary([
         ["/Type", "/Font"],
         ["/Subtype", this.subtype],
@@ -226,18 +255,6 @@ class Font {
 }
 
 class Footer {
-  constructor() {}
-}
-
-class CrossReference {
-  constructor(private readonly catalog: Catalog) {}
-
-  render = () => {
-    // const;
-  };
-}
-
-class Trailer {
   constructor() {}
 }
 
